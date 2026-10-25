@@ -28,13 +28,34 @@ public final class TodayApi {
     private TodayApi() {}
 
     /** 把 OpenAI 风格的模型名归一到上游 optionId；不认识就返回 default。 */
+    /** 支持的模型名（给报错信息和 /v1/models 用）。 */
+    public static final String[] MODEL_NAMES = {
+            "deepseek", "deepseek-v4.1-flash", "model.deepseek-v4.1-flash",
+            "glm", "glm-5.3", "model.glm-5.3"
+    };
+
+    /**
+     * 把 OpenAI 风格的模型名归一到上游 optionId。
+     * 不认识的名字抛 IllegalArgumentException，不要静默替换 ——
+     * 否则客户端以为在用 glm，实际跑的是 deepseek，排查时完全看不出。
+     */
     public static String normalizeModel(String name) {
-        if (name == null) return OPT_DEEPSEEK;
+        if (name == null || name.trim().isEmpty()) return OPT_DEEPSEEK;
         String s = name.trim().toLowerCase();
         if (s.equals("glm") || s.equals("glm-5.3") || s.equals("model.glm-5.3")) return OPT_GLM;
         if (s.equals("deepseek") || s.equals("deepseek-v4.1-flash")
                 || s.equals("model.deepseek-v4.1-flash")) return OPT_DEEPSEEK;
-        return OPT_DEEPSEEK;
+        throw new IllegalArgumentException("unknown model '" + name
+                + "'; available: " + joinNames());
+    }
+
+    private static String joinNames() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < MODEL_NAMES.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(MODEL_NAMES[i]);
+        }
+        return sb.toString();
     }
 
     /** OpenAI 暴露的模型短名（给 /v1/models 用）。 */

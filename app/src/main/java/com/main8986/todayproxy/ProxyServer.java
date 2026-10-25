@@ -29,6 +29,9 @@ public class ProxyServer {
 
     public interface Log { void line(String s); }
 
+    private static final byte[] CRLF = {'\r', '\n'};
+    private static final byte[] LAST_CHUNK = {'0', '\r', '\n', '\r', '\n'};
+
     private final Pool pool;
     private final String authKey;      // 客户端 API Key，空 = 不鉴权
     private final int port;
@@ -154,6 +157,14 @@ public class ProxyServer {
             sendJson(out, 400, err("empty prompt", "invalid_request_error")); return;
         }
 
+        // 模型名先校验，不认识就 400 —— 别静默换成 deepseek 让人误判
+        try {
+            TodayApi.normalizeModel(model);
+        } catch (IllegalArgumentException e) {
+            sendJson(out, 400, err(e.getMessage(), "invalid_request_error"));
+            return;
+        }
+
         long t0 = System.currentTimeMillis();
         Pool.Result r;
         try {
@@ -235,7 +246,8 @@ public class ProxyServer {
                 .put("choices", one(new JSONObject().put("index", 0)
                         .put("delta", new JSONObject())
                         .put("finish_reason", "stop"))));
-        out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+        writeChunk(out, "data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+        endChunked(out);
     }
 
     private static JSONArray one(JSONObject o) throws Exception {
@@ -244,8 +256,28 @@ public class ProxyServer {
         return a;
     }
 
+    /**
+     * 按 HTTP/1.1 chunked 格式写一帧 SSE。
+     *
+     * 坑：writeHead 已经声明了 Transfer-Encoding: chunked，但这里如果只写裸数据，
+     * 客户端会把 "data: {...}" 里的字符当成 chunk 长度去解析，直接报 Stream error。
+     * 每一帧必须是  "<十六进制长度>\r\n<内容>\r\n"  的形式。
+     */
     private void chunk(OutputStream out, JSONObject o) throws Exception {
-        out.write(("data: " + o.toString() + "\n\n").getBytes(StandardCharsets.UTF_8));
+        writeChunk(out, ("data: " + o.toString() + "\n\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void writeChunk(OutputStream out, byte[] payload) throws Exception {
+        out.write(Integer.toHexString(payload.length).getBytes(StandardCharsets.US_ASCII));
+        out.write(CRLF);
+        out.write(payload);
+        out.write(CRLF);
+        out.flush();
+    }
+
+    /** chunked 结束标记 */
+    private static void endChunked(OutputStream out) throws Exception {
+        out.write(LAST_CHUNK);
         out.flush();
     }
 
@@ -271,12 +303,12 @@ public class ProxyServer {
                                              .put("stop_sequence", JSONObject.NULL))
                 .put("usage", new JSONObject().put("output_tokens", outTokens)));
         sse(out, "message_stop", new JSONObject().put("type", "message_stop"));
+        endChunked(out);
     }
 
     private void sse(OutputStream out, String event, JSONObject data) throws Exception {
-        out.write(("event: " + event + "\ndata: " + data.toString() + "\n\n")
+        writeChunk(out, ("event: " + event + "\ndata: " + data.toString() + "\n\n")
                 .getBytes(StandardCharsets.UTF_8));
-        out.flush();
     }
 
     // ------------------------------------------------------------------ 提示词整形
@@ -410,11 +442,19 @@ public class ProxyServer {
         StringBuilder sb = new StringBuilder();
         sb.append("HTTP/1.1 ").append(code).append(' ').append(reason(code)).append("\r\n");
         sb.append("Content-Type: ").append(ctype).append("\r\n");
-        if (len >= 0) sb.append("Content-Length: ").append(len).append("\r\n");
-        else sb.append("Transfer-Encoding: chunked\r\n");
+        boolean isStream = ctype != null && ctype.startsWith("text/event-stream");
+        if (len >= 0) {
+            sb.append("Content-Length: ").append(len).append("\r\n");
+        } else {
+            sb.append("Transfer-Encoding: chunked\r\n");
+            sb.append("X-Accel-Buffering: no\r\n");
+        }
         sb.append("Access-Control-Allow-Origin: *\r\n");
         sb.append("Access-Control-Allow-Headers: Authorization, Content-Type, x-api-key, anthropic-version\r\n");
-        sb.append("Connection: close\r\n\r\n");
+        // 流式不能声明 Connection: close，否则部分客户端认为是"读到断连为止"，
+        // 反而忽略了 chunked 边界，一直等到超时才报错。
+        if (!isStream) sb.append("Connection: close\r\n");
+        sb.append("\r\n");
         out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
     }
 
