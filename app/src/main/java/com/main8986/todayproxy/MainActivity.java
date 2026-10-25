@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private LinearLayout poolBox;
     private TextView logView;
     private Button toggleBtn;
+    private TextView wifiHint;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     @Override
@@ -105,6 +106,10 @@ public class MainActivity extends Activity {
         TextView kv = text(connText(), 12, C_TXT);
         kv.setTextIsSelectable(true);
         conn.addView(kv);
+        wifiHint = text("⚠ 当前不在 WiFi 上，局域网地址（192.168.x.x）连不上。\n"
+                + "要么连回 WiFi，要么客户端用 127.0.0.1。", 11, 0xFFE0B44F);
+        wifiHint.setPadding(0, dp(8), 0, 0);
+        conn.addView(wifiHint);
         Button copy = new Button(this);
         copy.setText("复制 API Key");
         copy.setAllCaps(false);
@@ -212,9 +217,26 @@ public class MainActivity extends Activity {
     private String connText() {
         String ip = localIp();
         int port = store.port();
-        return "OpenAI    http://" + ip + ":" + port + "/v1\n"
+        return "【本机 App 用这个】同手机上的客户端\n"
+             + "OpenAI    http://127.0.0.1:" + port + "/v1\n"
+             + "Anthropic http://127.0.0.1:" + port + "\n"
+             + "\n【局域网其它设备用】必须同一个 WiFi\n"
+             + "OpenAI    http://" + ip + ":" + port + "/v1\n"
              + "Anthropic http://" + ip + ":" + port + "\n"
-             + "API Key   " + store.apiKey();
+             + "\nAPI Key   " + store.apiKey();
+    }
+
+    /** 是否连着 WiFi。不连 WiFi 时 192.168.x.x 那个地址是不可达的。 */
+    private boolean onWifi() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    getSystemService(CONNECTIVITY_SERVICE);
+            android.net.NetworkInfo ni = cm.getActiveNetworkInfo();
+            if (ni == null || !ni.isConnected()) return false;
+            return ni.getType() == android.net.ConnectivityManager.TYPE_WIFI;
+        } catch (Exception e) {
+            return true;   // 判断不了就不提示，别吓人
+        }
     }
 
     private String localIp() {
@@ -271,6 +293,10 @@ public class MainActivity extends Activity {
                 // 兜底：哪个号还没拿到额度/次数，就补查一次（每号每 20 秒最多一次）
                 for (Account a : accs) maybeFetchStatus(a);
             }
+        }
+        // 不在 WiFi 时，提示局域网地址不可用（连不上是常见坑）
+        if (wifiHint != null) {
+            wifiHint.setVisibility(onWifi() ? View.GONE : View.VISIBLE);
         }
         logView.setText(store.readLog());
     }
