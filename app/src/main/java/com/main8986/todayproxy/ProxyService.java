@@ -43,7 +43,13 @@ public class ProxyService extends Service implements ProxyServer.Log {
         if (isRunning()) return START_STICKY;
         try {
             createChannel();
-            startForeground(NOTIF_ID, buildNotif("正在启动…"));
+            // Android 14 要求显式声明前台服务类型，否则启动即崩。
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIF_ID, buildNotif("正在启动…"),
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIF_ID, buildNotif("正在启动…"));
+            }
 
             if (pool == null) pool = new Pool();
             pool.clear();

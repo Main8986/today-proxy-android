@@ -52,6 +52,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         store = new Store(this);
         buildUi();
+        requestNotifPermission();
         refresh();
         ui.postDelayed(tick, 2000);
     }
@@ -187,10 +188,24 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Android 13+ 必须运行时申请通知权限，否则前台服务的通知不显示。 */
+    private void requestNotifPermission() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1001);
+    }
+
     private void startServiceCompat() {
         Intent i = new Intent(this, ProxyService.class);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(i);
-        else startService(i);
+        try {
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(i);
+            else startService(i);
+        } catch (Exception e) {
+            // Android 12+ 从后台启动前台服务会被拒（ForegroundServiceStartNotAllowedException），
+            // 这种情况引导用户把 APP 切到前台再点一次。
+            toast("启动失败：" + e.getClass().getSimpleName() + "，请把 APP 保持在屏幕上再试");
+        }
         ui.postDelayed(this::refresh, 800);
     }
 
