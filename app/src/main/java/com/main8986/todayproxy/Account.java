@@ -26,6 +26,7 @@ public class Account {
     public volatile String plan;
     public volatile String selectedModel;
     public volatile Double usagePercent;   // null = 未知
+    public volatile Integer resetCount;    // 可用重置次数，null = 未查
     public volatile int inflight;
     public volatile long cooldownUntil;    // epoch millis，0 = 正常
     public volatile String lastError = "";
@@ -170,8 +171,76 @@ public class Account {
             }
             JSONObject mo = st.optJSONObject("modelOptions");
             if (mo != null) selectedModel = mo.optString("selectedOptionId", null);
+            // 顺带查一次重置次数（只读）
+            try {
+                resetQuota();
+            } catch (ApiException ignore) {
+            }
         } catch (Exception e) {
             throw new ApiException(0, "parse pricing: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询可用重置次数。GET /v1/pricing/resets 只读，不消耗次数。
+     * 实测抓包：{"data":{"items":[{"resetId","expiresAt"}],"totalCount":2}}
+     */
+    public int resetQuota() throws ApiException {
+        String body = api("GET", "/v1/pricing/resets", null, 30);
+        try {
+            JSONObject d = new JSONObject(body).optJSONObject("data");
+            if (d == null) throw new ApiException(0, "no data");
+            int total = d.optInt("totalCount", 0);
+            resetCount = total;
+            return total;
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(0, "parse resets: " + e.getMessage());
+        }
+    }
+
+    /**
+     * **会真的消耗一次重置配额**。调用前必须由用户明确确认。
+     *
+     * POST /v1/pricing/resets  {"resetId":"<uuid>"}
+     * → {"data":{"receipt":{"consumedCount":1,"availableCountAfter":2}}}
+     *
+     * @return 重置后剩余次数
+     */
+    public int consumeReset(String resetId) throws ApiException {
+        // 先取可用的 resetId 列表
+        String listBody = api("GET", "/v1/pricing/resets", null, 30);
+        String rid = resetId;
+        try {
+            JSONObject d = new JSONObject(listBody).optJSONObject("data");
+            JSONArray items = d == null ? null : d.optJSONArray("items");
+            if (items == null || items.length() == 0) {
+                throw new ApiException(409, "没有可用的重置次数");
+            }
+            if (rid == null || rid.isEmpty()) {
+                rid = items.optJSONObject(0).optString("resetId");
+            }
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(0, "parse resets: " + e.getMessage());
+        }
+
+        JSONObject req = new JSONObject();
+        try {
+            req.put("resetId", rid);
+        } catch (Exception ignore) {}
+        String body = api("POST", "/v1/pricing/resets", req.toString(), 60);
+        try {
+            JSONObject d = new JSONObject(body).optJSONObject("data");
+            JSONObject rc = d == null ? null : d.optJSONObject("receipt");
+            int after = rc == null ? 0 : rc.optInt("availableCountAfter", 0);
+            resetCount = after;
+            usagePercent = 0.0;
+            return after;
+        } catch (Exception e) {
+            throw new ApiException(0, "parse reset result: " + e.getMessage());
         }
     }
 

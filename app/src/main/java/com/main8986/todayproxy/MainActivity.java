@@ -316,7 +316,77 @@ public class MainActivity extends Activity {
         if (a.lastError != null && !a.lastError.isEmpty()) {
             box.addView(text(a.lastError, 10, C_BAD));
         }
+
+        // ---- 重置次数 + 重置按钮（每张号卡独立）----
+        View divider = new View(this);
+        divider.setBackgroundColor(0xFF22252A);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        dlp.topMargin = dp(8);
+        dlp.bottomMargin = dp(7);
+        box.addView(divider, dlp);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        int rc = a.resetCount == null ? -1 : a.resetCount;
+        String rcText = rc < 0 ? "可重置 — 次" : "可重置 " + rc + " 次";
+        TextView rcView = text(rcText, 11, rc > 0 ? 0xFFE0B44F : C_DIM);
+        row.addView(rcView, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button reset = new Button(this);
+        reset.setText("立即重置");
+        reset.setAllCaps(false);
+        reset.setTextSize(11);
+        reset.setEnabled(rc > 0);
+        reset.setAlpha(rc > 0 ? 1f : 0.35f);
+        final Account acc = a;
+        final int left = rc;
+        reset.setOnClickListener(v -> confirmReset(acc, left));
+        row.addView(reset);
+        box.addView(row);
+
         return box;
+    }
+
+    /** 重置需要手打 RESET 才执行 —— 一次点击就真的消耗一次配额。 */
+    private void confirmReset(final Account acc, final int left) {
+        if (left < 1) {
+            toast("这个账号没有可用的重置次数");
+            return;
+        }
+        final EditText et = input("输入大写 RESET", "", InputType.TYPE_CLASS_TEXT);
+        new AlertDialog.Builder(this)
+            .setTitle("⚠ 确认重置")
+            .setMessage("账号：" + acc.label
+                    + "\n当前次数：" + left + " 次"
+                    + "\n重置后：" + (left - 1) + " 次"
+                    + "\n\n重置会立即消耗 1 次配额，不可撤销。")
+            .setView(et)
+            .setPositiveButton("确认重置", (d, w) -> {
+                if (!"RESET".equals(et.getText().toString().trim())) {
+                    toast("已取消（需输入大写 RESET）");
+                    return;
+                }
+                doReset(acc);
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+
+    private void doReset(final Account acc) {
+        new Thread(() -> {
+            try {
+                int after = acc.consumeReset(null);
+                ui.post(() -> {
+                    toast("重置成功，剩余 " + after + " 次");
+                    refresh();
+                });
+            } catch (ApiException e) {
+                ui.post(() -> toast("重置失败：" + Account.trim(e.getMessage())));
+            }
+        }).start();
     }
 
     // ------------------------------------------------------------------ 加号
