@@ -72,7 +72,12 @@ set +o pipefail
 # 用 shell 参数替换而不是 sed，避免转义地狱
 missing=0
 while IFS= read -r src; do
+  # sources.txt 里混着两份源码树：app 源码 + aapt2 生成的 R.java（在 build/gen 下）
+  # 两者都要按各自的根换算成 classes 下的相对路径
   rel="${src#"$APP/java/"}"
+  if [ "$rel" = "$src" ]; then
+    rel="${src#"$OUT/gen/"}"
+  fi
   rel="${rel%.java}.class"
   if [ ! -f "$OUT/classes/$rel" ]; then
     printf '\033[31mxx\033[0m 没有生成: %s\n' "$rel" >&2
