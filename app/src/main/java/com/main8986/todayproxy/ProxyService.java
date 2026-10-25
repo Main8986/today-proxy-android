@@ -61,6 +61,22 @@ public class ProxyService extends Service implements ProxyServer.Log {
             server.start();
             updateNotif();
             line("服务已启动 :" + store.port() + " 账号 " + pool.size() + " 个");
+            // 启动时后台拉一次每个号的额度/套餐/重置次数。
+            // 之前只在"加号"时刷新，重启 APP 后数据全是 null，界面显示 "—"。
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    for (Account a : pool.accounts()) {
+                        try {
+                            a.jwt();
+                            a.refreshStatus();
+                            a.reward();
+                        } catch (ApiException e) {
+                            a.penalize(e);
+                            line("刷新失败 " + a.label + ": " + Account.trim(e.getMessage()));
+                        }
+                    }
+                }
+            }).start();
         } catch (Exception e) {
             line("启动失败: " + e.getClass().getSimpleName() + " " + e.getMessage());
             stopSelf();

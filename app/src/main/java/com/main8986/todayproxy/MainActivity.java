@@ -268,10 +268,33 @@ public class MainActivity extends Activity {
                 poolBox.addView(text("还没有账号，点右上角加号", 12, C_DIM));
             } else {
                 for (Account a : accs) poolBox.addView(accountRow(a, now));
+                // 兜底：哪个号还没拿到额度/次数，就补查一次（每号每 20 秒最多一次）
+                for (Account a : accs) maybeFetchStatus(a);
             }
         }
         logView.setText(store.readLog());
     }
+
+    /** 数据缺失时补查一次，避免界面一直显示 "—"。 */
+    private void maybeFetchStatus(final Account a) {
+        if (a.usagePercent != null && a.resetCount != null) return;
+        long now = System.currentTimeMillis();
+        Long last = lastFetch.get(a);
+        if (last != null && now - last < 20000) return;
+        lastFetch.put(a, now);
+        new Thread(() -> {
+            try {
+                a.jwt();
+                a.refreshStatus();
+                a.reward();
+            } catch (ApiException e) {
+                a.penalize(e);
+            }
+            ui.post(this::refresh);
+        }).start();
+    }
+
+    private final java.util.Map<Account, Long> lastFetch = new java.util.HashMap<>();
 
     private View accountRow(Account a, long now) {
         LinearLayout box = new LinearLayout(this);
