@@ -52,8 +52,11 @@ say "2/6 链接资源 (aapt2 link)"
 
 say "3/6 编译 Java"
 find "$APP/java" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
-javac -source 8 -target 8 \
-  -bootclasspath "$PLATFORM" \
+# 注意：不要用 -bootclasspath 指向 android.jar。
+# 那样 javac 会连 java.lang.invoke.LambdaMetafactory 都从 android.jar 里找，
+# 而 android.jar 里没有这个方法 -> "Unable to find method metafactory"。
+# 正确做法：classpath 给 android.jar，bootclasspath 保持 JDK 默认。
+javac -source 8 -target 8 -Xlint:-options \
   -classpath "$PLATFORM" \
   -d "$OUT/classes" \
   -encoding UTF-8 \
