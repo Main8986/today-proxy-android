@@ -210,8 +210,8 @@ public class Account {
         long deadline = System.currentTimeMillis() + timeoutSec * 1000L;
         String last = "";
         while (System.currentTimeMillis() < deadline) {
-            String body = api("GET", "/v1/conversations/messages?isMainChat=true&limit=50", null, 30);
             try {
+                String body = api("GET", "/v1/conversations/messages?isMainChat=true&limit=50", null, 30);
                 JSONObject root = new JSONObject(body);
                 JSONObject data = root.optJSONObject("data");
                 JSONArray items = data == null ? null : data.optJSONArray("items");

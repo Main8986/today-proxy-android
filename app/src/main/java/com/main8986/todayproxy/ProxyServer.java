@@ -60,7 +60,7 @@ public class ProxyServer {
                             @Override public void run() { handle(s); }
                         });
                     } catch (Exception e) {
-                        if (running) log("accept error: " + e.getMessage());
+                        if (running) ProxyServer.this.log.line("accept error: " + e.getMessage());
                     }
                 }
             }
@@ -132,7 +132,7 @@ public class ProxyServer {
             }
             sock.close();
         } catch (Exception e) {
-            log("handle error: " + e.getClass().getSimpleName() + " " + e.getMessage());
+            ProxyServer.this.log.line("handle error: " + e.getClass().getSimpleName() + " " + e.getMessage());
             try { sock.close(); } catch (Exception ignore) {}
         }
     }
@@ -161,11 +161,11 @@ public class ProxyServer {
         } catch (ApiException e) {
             int code = (e.code >= 400 && e.code < 600) ? e.code : 502;
             sendJson(out, code, err(e.getMessage(), "upstream_error"));
-            log("! " + model + " -> " + code + " " + Account.trim(e.getMessage()));
+            ProxyServer.this.log.line("! " + model + " -> " + code + " " + Account.trim(e.getMessage()));
             return;
         }
         long ms = System.currentTimeMillis() - t0;
-        log(String.format(Locale.US, "OK %s via %s (%dms, %d字)", model, r.account.label, ms, r.text.length()));
+        ProxyServer.this.log.line(String.format(Locale.US, "OK %s via %s (%dms, %d字)", model, r.account.label, ms, r.text.length()));
 
         String cid = "chatcmpl-" + UUID.randomUUID().toString().replace("-", "");
         long created = System.currentTimeMillis() / 1000;
