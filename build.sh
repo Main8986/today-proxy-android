@@ -56,13 +56,28 @@ find "$APP/java" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
 # 那样 javac 会连 java.lang.invoke.LambdaMetafactory 都从 android.jar 里找，
 # 而 android.jar 里没有这个方法 -> "Unable to find method metafactory"。
 # 正确做法：classpath 给 android.jar，bootclasspath 保持 JDK 默认。
+# 注意：这里绝不能吞掉 javac 的失败。
+# 曾经写成 `| grep ... || true` 再只检查 MainActivity.class 是否存在，
+# 结果 ProxyServer.java 编译失败被静默忽略，产物少了一个类，
+# 装到手机上就是 NoClassDefFoundError: ProxyServer。
+set -o pipefail
 javac -source 8 -target 8 -Xlint:-options \
   -classpath "$PLATFORM" \
   -d "$OUT/classes" \
   -encoding UTF-8 \
-  @"$OUT/sources.txt" 2>&1 | grep -v 'bootstrap class path' || true
-[ -f "$OUT/classes/com/main8986/todayproxy/MainActivity.class" ] \
-  || die "javac 编译失败"
+  @"$OUT/sources.txt"
+set +o pipefail
+
+# 逐个核对：每个 .java 都必须有对应的 .class
+missing=0
+while IFS= read -r src; do
+  cls="$OUT/classes/$(echo "$src" | sed "s#$APP/java/##; s#\.java$#.class#")"
+  if [ ! -f "$cls" ]; then
+    printf '\033[31mxx\033[0m 没有生成: %s\n' "${cls#$OUT/classes/}" >&2
+    missing=$((missing+1))
+  fi
+done < "$OUT/sources.txt"
+[ "$missing" -eq 0 ] || die "有 $missing 个类没编译出来"
 
 say "4/6 dex (d8)"
 find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"

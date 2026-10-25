@@ -238,7 +238,11 @@ public class ProxyServer {
         out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
     }
 
-    private static JSONArray one(JSONObject o) { JSONArray a = new JSONArray(); a.put(o); return a; }
+    private static JSONArray one(JSONObject o) throws Exception {
+        JSONArray a = new JSONArray();
+        a.put(o);
+        return a;
+    }
 
     private void chunk(OutputStream out, JSONObject o) throws Exception {
         out.write(("data: " + o.toString() + "\n\n").getBytes(StandardCharsets.UTF_8));
@@ -347,7 +351,7 @@ public class ProxyServer {
     }
 
     // ------------------------------------------------------------------ 响应
-    private JSONObject health() {
+    private JSONObject health() throws Exception {
         List<Account> accs = pool.accounts();
         long now = System.currentTimeMillis();
         int healthy = 0;
@@ -376,8 +380,17 @@ public class ProxyServer {
     }
 
     private static JSONObject err(String msg, String type) {
-        return new JSONObject().put("error", new JSONObject()
-                .put("message", msg == null ? "" : msg).put("type", type));
+        // JSONObject.put 会抛受检的 JSONException。这里内部吞掉，
+        // 否则 15 个调用点全部要加 throws，得不偿失。
+        JSONObject o = new JSONObject();
+        try {
+            JSONObject e = new JSONObject();
+            e.put("message", msg == null ? "" : msg);
+            e.put("type", type);
+            o.put("error", e);
+        } catch (Exception ignore) {
+        }
+        return o;
     }
 
     private void sendJson(OutputStream out, int code, JSONObject o) {
