@@ -1,0 +1,19 @@
+# 运行时与构建产物
+build/
+keystore.jks
+*.apk
+*.keystore
+
+# 签名密钥（绝不提交）
+signing.properties
+local.properties
+
+# IDE
+.idea/
+*.iml
+.gradle/
+.vscode/
+
+# 系统
+.DS_Store
+Thumbs.db
