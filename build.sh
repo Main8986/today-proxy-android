@@ -69,11 +69,13 @@ javac -source 8 -target 8 -Xlint:-options \
 set +o pipefail
 
 # 逐个核对：每个 .java 都必须有对应的 .class
+# 用 shell 参数替换而不是 sed，避免转义地狱
 missing=0
 while IFS= read -r src; do
-  cls="$OUT/classes/$(echo "$src" | sed "s#$APP/java/##; s#\.java$#.class#")"
-  if [ ! -f "$cls" ]; then
-    printf '\033[31mxx\033[0m 没有生成: %s\n' "${cls#$OUT/classes/}" >&2
+  rel="${src#"$APP/java/"}"
+  rel="${rel%.java}.class"
+  if [ ! -f "$OUT/classes/$rel" ]; then
+    printf '\033[31mxx\033[0m 没有生成: %s\n' "$rel" >&2
     missing=$((missing+1))
   fi
 done < "$OUT/sources.txt"
