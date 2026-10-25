@@ -217,13 +217,21 @@ public class MainActivity extends Activity {
     private String connText() {
         String ip = localIp();
         int port = store.port();
-        return "【本机 App 用这个】同手机上的客户端\n"
-             + "OpenAI    http://127.0.0.1:" + port + "/v1\n"
-             + "Anthropic http://127.0.0.1:" + port + "\n"
-             + "\n【局域网其它设备用】必须同一个 WiFi\n"
-             + "OpenAI    http://" + ip + ":" + port + "/v1\n"
-             + "Anthropic http://" + ip + ":" + port + "\n"
-             + "\nAPI Key   " + store.apiKey();
+        StringBuilder sb = new StringBuilder();
+        sb.append("【本机 App 用这个】同手机上的客户端\n")
+          .append("OpenAI    http://127.0.0.1:").append(port).append("/v1\n")
+          .append("Anthropic http://127.0.0.1:").append(port).append("\n\n");
+        if (ip == null) {
+            sb.append("【局域网其它设备用】\n")
+              .append("当前没有 WiFi 连接，无局域网地址可用。\n")
+              .append("要连别的设备请先连上 WiFi。\n");
+        } else {
+            sb.append("【局域网其它设备用】必须同一个 WiFi\n")
+              .append("OpenAI    http://").append(ip).append(":").append(port).append("/v1\n")
+              .append("Anthropic http://").append(ip).append(":").append(port).append("\n");
+        }
+        sb.append("\nAPI Key   ").append(store.apiKey());
+        return sb.toString();
     }
 
     /** 是否连着 WiFi。不连 WiFi 时 192.168.x.x 那个地址是不可达的。 */
@@ -239,6 +247,14 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * 取真实局域网 IP。没有 WiFi 时返回 null。
+     *
+     * 坑：以前直接取第一个非回环 IPv4，手机上会先撞到
+     *   tun0 (172.19.0.1)   VPN 虚拟网卡，外部设备根本连不上
+     *   rmnet_data (10.x)   移动数据网，不属于任何局域网
+     * 现在只认 wlan 开头的网卡，并且要求地址在私有网段。
+     */
     private String localIp() {
         try {
             java.util.Enumeration<java.net.NetworkInterface> en =
@@ -246,15 +262,32 @@ public class MainActivity extends Activity {
             while (en.hasMoreElements()) {
                 java.net.NetworkInterface ni = en.nextElement();
                 if (!ni.isUp() || ni.isLoopback()) continue;
+                String name = ni.getName() == null ? "" : ni.getName().toLowerCase();
+                // 只认 WiFi 网卡；排除 tun/rmnet/ppp 等虚拟或蜂窝网卡
+                if (!(name.startsWith("wlan") || name.startsWith("ap") || name.startsWith("eth"))) continue;
                 java.util.Enumeration<java.net.InetAddress> as = ni.getInetAddresses();
                 while (as.hasMoreElements()) {
                     java.net.InetAddress a = as.nextElement();
-                    if (!a.isLoopbackAddress() && a.getHostAddress().indexOf(':') < 0)
-                        return a.getHostAddress();
+                    String ip = a.getHostAddress();
+                    if (ip == null || ip.indexOf(':') >= 0) continue;
+                    if (isPrivateIp(ip)) return ip;
                 }
             }
         } catch (Exception ignore) {}
-        return "127.0.0.1";
+        return null;
+    }
+
+    /** 10.x / 172.16-31.x / 192.168.x 才是可用的局域网地址。 */
+    private static boolean isPrivateIp(String ip) {
+        String[] p = ip.split("\\.");
+        if (p.length != 4) return false;
+        try {
+            int a = Integer.parseInt(p[0]), b = Integer.parseInt(p[1]);
+            if (a == 10) return true;
+            if (a == 192 && b == 168) return true;
+            if (a == 172 && b >= 16 && b <= 31) return true;
+        } catch (NumberFormatException ignore) {}
+        return false;
     }
 
     // ------------------------------------------------------------------ 刷新
